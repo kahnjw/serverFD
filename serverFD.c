@@ -25,6 +25,17 @@
 /* Keep track of connections and connection state with this array, may need
  * to be an array of structs, careful so there is no stack smashing!
  */
+
+typedef struct file {
+    char ip[100];
+    char fileName[100];
+    char fileSize[100];
+    char fileOwner[100];
+    int socketID;
+} File;
+
+void parseFiles(File FileInfo[], char s[], int * fileCount, char address[]);
+
 int connections[NUM_CLIENTS + 1];
 
 
@@ -60,12 +71,17 @@ int main(int argc, char *argv[]) {
     int i;
     int newfd;
     int listener; // listener socket descriptor
-    int numConns = 0;
+    int fileCount = 0;
+    int numConns = 1;
+    char address[50];
     struct addrinfo hints, *res;
     struct sockaddr_storage remoteaddr; // client address
     socklen_t addrlen;
     char s[1000];
 
+    /* File information array */
+    File FileInfo[1000];
+    bzero(FileInfo, sizeof(FileInfo));
     // shit for select()
     struct timeval tv;
     fd_set read_fds;
@@ -107,7 +123,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    connections[NUM_CLIENTS] = listener;
+    connections[0] = listener;
 
     /*
      * Bind our local address so that the client can send to us.
@@ -129,30 +145,47 @@ int main(int argc, char *argv[]) {
     FD_SET(listener, &read_fds);
 
     while(1) {
+        FD_ZERO(&read_fds);
+        for(i = 0; i < numConns; i++){
+            FD_SET(connections[i], &read_fds);
+        }
+        
         printf("Waiting for a connection\n\n");
-        if (selret = select(NUM_CLIENTS + 1, &read_fds, NULL, NULL, NULL) == -1) {
+        if ((selret = select(FD_SETSIZE, &read_fds, NULL, NULL, NULL)) == -1) {
             perror("select");
             exit(4);
         }
         printf("Got connection\n\n");
         for(i = 0; i < NUM_CLIENTS + 1; i++) {
-            if( FD_ISSET(connections[i], &read_fds) && numConns < NUM_CLIENTS){
+            if( FD_ISSET(connections[i], &read_fds) && numConns < NUM_CLIENTS) {
                 if (connections[i] == listener) {
                     numConns++;
                     // handle new connections
-                    addrlen = sizeof remoteaddr;
+                    addrlen = sizeof(remoteaddr);
                     newfd = accept(listener,
                         (struct sockaddr *)&remoteaddr,
                         &addrlen);
                     printf("Stored new connection\n");
                     FD_SET(newfd, &read_fds);
-                    connections[numConns] = newfd;
-                } else {
-                    if(recv(connections[i], s, sizeof(s), NULL) < 0) {
+                    connections[numConns - 1] = newfd;
+
+                    if(recv(newfd, s, sizeof(s), 0) < 0) {
                         perror("recv()");
                         exit(1);
                     }
-                    printf("Recieved some shit: %s\n", s);
+
+                    inet_ntop(remoteaddr.ss_family,
+                        get_in_addr((struct sockaddr *)&remoteaddr),
+                        address, sizeof(address));
+                    parseFiles(FileInfo, s, &fileCount, address);
+
+                
+                } else {
+                    if(recv(connections[i], s, sizeof(s), 0) < 0) {
+                        perror("recv()");
+                        exit(1);
+                    }
+                    printf("Recieved message: %s\n", s);
                 }
             }
 
@@ -207,4 +240,41 @@ int connection(int sockfd) {
 void segFaultHelp(){
     printf("Got to seg fault helper function\n");
     exit(0);
+}
+
+
+void parseFiles(File FileInfo[], char s[], int * fileCount, char address[]) {
+
+    int i, j, lineCount;
+    char temp[100][1000];
+    char * semicDel;
+    char * slashDel;
+
+    bzero(temp, sizeof(temp));
+
+    semicDel = strtok(s, ";");
+
+    for(i = 0; semicDel != NULL; i++){
+        strcpy(temp[i], semicDel);
+        semicDel = strtok(NULL, ";");
+    }
+
+    lineCount = i;
+
+    for(i = 0, j = *fileCount; i < lineCount; i++, j++){
+      
+        slashDel = strtok(temp[i], "/");
+        strcpy(FileInfo[j].fileName, slashDel);
+        slashDel = strtok(NULL, "/");
+        strcpy(FileInfo[j].fileSize, slashDel);
+        slashDel = strtok(NULL, "/");
+        strcpy(FileInfo[j].fileOwner, slashDel);
+
+        strcpy(FileInfo[j].ip, address);
+
+        printf("FileName: %s\n", FileInfo[j].fileName);
+        printf("FileSize: %s\n", FileInfo[j].fileSize);
+        printf("FileOwner: %s\n", FileInfo[j].fileOwner);
+        printf("FileIP: %s\n\n", FileInfo[j].ip);
+    }
 }
