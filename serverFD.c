@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) {
     struct addrinfo hints, *res;
     struct sockaddr_storage remoteaddr; // client address
     socklen_t addrlen;
-    char s[1000];
+    char s[1024 * 4];
 
     /* File information array */
     File FileInfo[1000];
@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
                     FD_SET(newfd, &read_fds);
                     connections[numConns - 1] = newfd;
 
-                    if(recv(newfd, s, sizeof(s), 0) < 0) {
+                    if(recv(newfd, s, sizeof(s), MSG_WAITALL) < 0) {
                         perror("recv()");
                         exit(1);
                     }
@@ -181,11 +181,19 @@ int main(int argc, char *argv[]) {
 
                 
                 } else {
-                    if(recv(connections[i], s, sizeof(s), 0) < 0) {
+                    if(recv(connections[i], s, sizeof(s), MSG_WAITALL) < 0) {
                         perror("recv()");
                         exit(1);
                     }
-                    printf("Recieved message: %s\n", s);
+                    if(!strcmp("List", s)) {
+                        printf("Got list command\n");
+                        bzero(s, sizeof(s));
+                        strcpy(s, "List command");
+
+                        if(send(connections[i], s, sizeof(s), NULL) < 0) {
+                            perror("send()");
+                        }
+                    }
                 }
             }
 
