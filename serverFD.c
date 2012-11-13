@@ -34,7 +34,9 @@ typedef struct file {
     int socketID;
 } File;
 
-void parseFiles(File FileInfo[], char s[], int * fileCount, char address[]);
+void parseFiles(File FileInfo[], char s[], int * fileCount, char address[], int sockid);
+void buildList(File FileInfo[], char s[], int fileCount);
+int findFile(File FileInfo[], char cmd[], int fileCount);
 
 int connections[NUM_CLIENTS + 1];
 
@@ -67,6 +69,7 @@ int main(int argc, char *argv[]) {
     int r;
     FILE *logFile;
     int selret = 0;
+    char * cmd;
 
     int i;
     int newfd;
@@ -76,8 +79,10 @@ int main(int argc, char *argv[]) {
     char address[50];
     struct addrinfo hints, *res;
     struct sockaddr_storage remoteaddr; // client address
+    char fileName[100];
     socklen_t addrlen;
-    char s[1024 * 4];
+    char s[1024 * 24];
+    char s1[1024 * 24];
 
     /* File information array */
     File FileInfo[1000];
@@ -177,21 +182,47 @@ int main(int argc, char *argv[]) {
                     inet_ntop(remoteaddr.ss_family,
                         get_in_addr((struct sockaddr *)&remoteaddr),
                         address, sizeof(address));
-                    parseFiles(FileInfo, s, &fileCount, address);
+                    parseFiles(FileInfo, s, &fileCount, address, connections[i]);
 
                 
                 } else {
+                    bzero(s, sizeof(s));
                     if(recv(connections[i], s, sizeof(s), MSG_WAITALL) < 0) {
                         perror("recv()");
                         exit(1);
                     }
                     if(!strcmp("List", s)) {
                         printf("Got list command\n");
-                        bzero(s, sizeof(s));
-                        strcpy(s, "List command");
 
-                        if(send(connections[i], s, sizeof(s), NULL) < 0) {
+                        bzero(s, sizeof(s));
+
+                        buildList(FileInfo, s, fileCount);
+
+                        if(send(connections[i], s, sizeof(s), 0) < 0) {
                             perror("send()");
+                        }
+                    } else if (!strcmp("SendFileList", s)){
+                        // do shit
+                    } else {
+                        cmd = strtok(s, " ");
+                        if(strcmp("Get", cmd)) {
+                            bzero(s, sizeof(s));
+                            strcpy(s, "Bad command\n");
+                            if(send(connections[i], s, sizeof(s), 0) < 0) {
+                                perror("send()");
+                            }
+                        } else {
+                            cmd = strtok(NULL, " ");
+                            bzero(s1, sizeof(s1));
+                            int fileInd;
+                            if((fileInd = findFile(FileInfo, cmd, fileCount)) != -1){
+                                sprintf(s1, "%d", FileInfo[fileInd].socketID );
+                                strcat(s1, "/");
+                                strcat(s1, FileInfo[fileInd].ip);
+                                if(send(connections[i], s1, sizeof(s), 0) < 0) {
+                                    perror("send()");
+                                }
+                            }
                         }
                     }
                 }
@@ -251,7 +282,7 @@ void segFaultHelp(){
 }
 
 
-void parseFiles(File FileInfo[], char s[], int * fileCount, char address[]) {
+void parseFiles(File FileInfo[], char s[], int * fileCount, char address[], int sockid) {
 
     int i, j, lineCount;
     char temp[100][1000];
@@ -268,6 +299,7 @@ void parseFiles(File FileInfo[], char s[], int * fileCount, char address[]) {
     }
 
     lineCount = i;
+    
 
     for(i = 0, j = *fileCount; i < lineCount; i++, j++){
       
@@ -280,9 +312,39 @@ void parseFiles(File FileInfo[], char s[], int * fileCount, char address[]) {
 
         strcpy(FileInfo[j].ip, address);
 
-        printf("FileName: %s\n", FileInfo[j].fileName);
-        printf("FileSize: %s\n", FileInfo[j].fileSize);
-        printf("FileOwner: %s\n", FileInfo[j].fileOwner);
-        printf("FileIP: %s\n\n", FileInfo[j].ip);
+        FileInfo[j].socketID = sockid;
+
+        printf("FileName %d: %s\n", j, FileInfo[j].fileName);
+        printf("FileSize %d: %s\n", j, FileInfo[j].fileSize);
+        printf("FileOwner %d: %s\n", j, FileInfo[j].fileOwner);
+        printf("FileIP %d: %s\n\n", j, FileInfo[j].ip);
     }
+    *fileCount += i;
+}
+
+void buildList(File FileInfo[], char s[], int fileCount) {
+    int i;
+
+    bzero(s, sizeof(s));
+    
+    for(i = 0; i < fileCount; i++){
+        strcat(s, FileInfo[i].fileName);
+        printf("FileName %d: %s\n", i, FileInfo[i].fileName);
+        strcat(s, "\t||");
+        strcat(s, FileInfo[i].fileSize);
+        strcat(s, "\t||");
+        strcat(s, FileInfo[i].fileOwner);
+        strcat(s, "\n");
+    }
+}
+
+int findFile(File FileInfo[], char cmd[], int fileCount) {
+    int i;
+    
+    for(i = 0; i < fileCount; i++) {
+        if(!strcmp(FileInfo[i].fileName, cmd)) {
+            return i;
+        }
+    }
+    return -1;
 }
