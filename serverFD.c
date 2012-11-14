@@ -3,7 +3,7 @@
  */
 
 #include <stdio.h>
-#include <sys/types.h>          /* See NOTES */
+#include <sys/types.h>         
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -65,30 +65,34 @@ char logFileName[64];
 
 int main(int argc, char *argv[]) {
 
-    struct timeval currTime;
-    int r;
     FILE *logFile;
-    int selret = 0;
-    char * cmd;
 
+    int r;
     int i;
     int newfd;
     int listener; // listener socket descriptor
     int fileCount = 0;
     int numConns = 1;
-    char address[50];
+    int selret = 0;
+    
     struct addrinfo hints, *res;
     struct sockaddr_storage remoteaddr; // client address
-    char fileName[100];
     socklen_t addrlen;
+
+    struct timeval currTime;
+    struct timeval tv;
+
+    File FileInfo[1000];
+
+    char fileName[100];
     char s[1024 * 24];
     char s1[1024 * 24];
+    char address[50];
+    char * cmd;
 
-    /* File information array */
-    File FileInfo[1000];
+    
     bzero(FileInfo, sizeof(FileInfo));
-    // shit for select()
-    struct timeval tv;
+    
     fd_set read_fds;
 
     // Setting shit for select, timeout vals and FDset
@@ -182,7 +186,7 @@ int main(int argc, char *argv[]) {
                     inet_ntop(remoteaddr.ss_family,
                         get_in_addr((struct sockaddr *)&remoteaddr),
                         address, sizeof(address));
-                    parseFiles(FileInfo, s, &fileCount, address, connections[i]);
+                    parseFiles(FileInfo, s, &fileCount, address, newfd);
 
                 
                 } else {
@@ -191,6 +195,7 @@ int main(int argc, char *argv[]) {
                         perror("recv()");
                         exit(1);
                     }
+                    
                     if(!strcmp("List", s)) {
                         printf("Got list command\n");
 
@@ -205,6 +210,7 @@ int main(int argc, char *argv[]) {
                         // do shit
                     } else {
                         cmd = strtok(s, " ");
+
                         if(strcmp("Get", cmd)) {
                             bzero(s, sizeof(s));
                             strcpy(s, "Bad command\n");
@@ -212,17 +218,29 @@ int main(int argc, char *argv[]) {
                                 perror("send()");
                             }
                         } else {
+                            
                             cmd = strtok(NULL, " ");
                             bzero(s1, sizeof(s1));
                             int fileInd;
                             if((fileInd = findFile(FileInfo, cmd, fileCount)) != -1){
-                                sprintf(s1, "%d", FileInfo[fileInd].socketID );
-                                strcat(s1, "/");
+                                
+                                strcat(s1, "?/");
+                                strcat(s1, FileInfo[fileInd].fileName);
+
+                                if(send(FileInfo[fileInd].socketID, s1, sizeof(s1), 0) < 0) {
+                                    perror("send()");
+                                }
+
+                                bzero(s1, sizeof(s1));
                                 strcat(s1, FileInfo[fileInd].ip);
-                                if(send(connections[i], s1, sizeof(s), 0) < 0) {
+                                strcat(s1, "/");
+                                strcat(s1, FileInfo[fileInd].fileName);
+                               
+                                if(send(connections[i], s1, sizeof(s1), 0) < 0) {
                                     perror("send()");
                                 }
                             }
+                            bzero(s1, sizeof(s1));
                         }
                     }
                 }
